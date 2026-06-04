@@ -54,8 +54,8 @@
 <script>
   // Supabase config — provided by you (anon/publishable key only)
   const supabaseClient = window.supabaseClient = supabase.createClient(
-    'https://snsinlyovmsznmesbako.supabase.co', 
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuc2lubHlvdm1zem5tZXNiYWtvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTIxNTcsImV4cCI6MjA5NTg4ODE1N30.lMhqMRJ4gNyEqA8szRM46SbsOiamAJ9xPXp6UhVSi2g'
+    'https://mlpggcfwuwxbqehkhtvf.supabase.co', 
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1scGdnY2Z3dXd4YnFlaGtodHZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODE3MjQsImV4cCI6MjA5NjE1NzcyNH0.fE0Tbz7l_T2zyvaKaz9hLddyOZfJ2LyQt9ethCikw5g'
   );
 
   let exportsRealtimeChannel = null;
@@ -7866,20 +7866,18 @@ function sendToTrade(){
 </div>
 
 <!-- FEEDBACK NOTIFICATION POPUP -->
-<div id="feedback-popup-overlay" style="display:none;position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,0.8);align-items:center;justify-content:center">
-  <div style="background:#0f1016;border:1px solid rgba(0,242,255,0.25);border-radius:18px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 0 60px rgba(0,242,255,0.1)">
-    <div style="font-family:var(--font-head);font-size:18px;font-weight:800;color:var(--green);margin-bottom:6px">&#128236; New Feedback</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:20px">Your admin has reviewed your report</div>
-    <div style="margin-bottom:14px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Rating</div>
-      <div id="fb-popup-stars" style="font-size:22px;color:#ffd700;letter-spacing:2px"></div>
-    </div>
+<div id="feedback-popup-overlay" style="display:none;position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:#0f1016;border:1px solid rgba(0,242,255,0.25);border-radius:18px;padding:32px 28px;max-width:360px;width:90%;box-shadow:0 0 60px rgba(0,242,255,0.1);text-align:center">
+    <div style="font-size:32px;margin-bottom:12px">📬</div>
+    <div style="font-family:var(--font-head);font-size:20px;font-weight:800;color:var(--green);margin-bottom:8px">New Feedback</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:24px;line-height:1.5">Your report has been reviewed by the admin. Check the Resources section to view comments and details.</div>
     <div style="margin-bottom:20px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Comment</div>
-      <div id="fb-popup-comment" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);line-height:1.6;min-height:48px"></div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Rating Assigned</div>
+      <div id="fb-popup-stars" style="font-size:24px;color:#ffd700;letter-spacing:4px"></div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:18px" id="fb-popup-time"></div>
-    <button id="fb-popup-ok" style="width:100%;padding:12px;background:var(--green);color:#000;border:none;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font-head)">OK &#8212; Got it!</button>
+    <div style="display:none"><div id="fb-popup-comment"></div></div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:24px" id="fb-popup-time"></div>
+    <button id="fb-popup-ok" style="width:100%;padding:12px 0;background:var(--green);color:#000;border:none;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font-head)">OK — Got it!</button>
   </div>
 </div>
 
@@ -7888,9 +7886,10 @@ window.__pendingFeedbackIds = [];
 
 function checkFeedbackPopup(){
   const feedbacks = window.__studentFeedbacks || [];
+  const dismissed = JSON.parse(localStorage.getItem('tv_dismissed_popups') || '{}');
   const unseen = feedbacks.filter(function(r){
     var fb = (r.payload||{}).feedback || {};
-    return fb.sentAt && !fb.seen;
+    return fb.sentAt && !fb.seen && !dismissed[r.id];
   });
   if(!unseen.length) return;
   var r = unseen[0];
@@ -7903,13 +7902,14 @@ function checkFeedbackPopup(){
   document.getElementById('fb-popup-time').textContent = t ? 'Sent: '+t : '';
   var overlay = document.getElementById('feedback-popup-overlay');
   overlay.style.display = 'flex';
-  document.getElementById('fb-popup-ok').onclick = async function(){
+  document.getElementById('fb-popup-ok').onclick = function(){
     overlay.style.display = 'none';
+    const currDismissed = JSON.parse(localStorage.getItem('tv_dismissed_popups') || '{}');
     for(var i=0;i<window.__pendingFeedbackIds.length;i++){
-      try{ await markFeedbackSeen(window.__pendingFeedbackIds[i]); }catch(e){}
+      currDismissed[window.__pendingFeedbackIds[i]] = true;
     }
+    localStorage.setItem('tv_dismissed_popups', JSON.stringify(currDismissed));
     window.__pendingFeedbackIds = [];
-    loadStudentResourcesAndFeedback();
   };
 }
 </script>
