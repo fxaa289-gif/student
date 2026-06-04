@@ -961,8 +961,8 @@ button,a,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,
    SUPABASE
 ═══════════════════════════════════════ */
 const supabaseClient = supabase.createClient(
-  'https://snsinlyovmsznmesbako.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuc2lubHlvdm1zem5tZXNiYWtvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTIxNTcsImV4cCI6MjA5NTg4ODE1N30.lMhqMRJ4gNyEqA8szRM46SbsOiamAJ9xPXp6UhVSi2g'
+  'https://mlpggcfwuwxbqehkhtvf.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1scGdnY2Z3dXd4YnFlaGtodHZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODE3MjQsImV4cCI6MjA5NjE1NzcyNH0.fE0Tbz7l_T2zyvaKaz9hLddyOZfJ2LyQt9ethCikw5g'
 );
 
 // ===== SUPABASE KEEP-ALIVE =====
@@ -1194,10 +1194,56 @@ async function loadAllExports(){
     console.time('loadAllExports');
 
     console.time('LOAD_ALL_EXPORTS');
-    const {data,error}=await supabaseClient.from('exports').select('*').order('created_at',{ascending:false});
+    const {data: archivedDataRaw, error}=await supabaseClient
+      .from('exports')
+      .select(`
+        id,
+        student_name,
+        username,
+        created_at,
+        type:payload->type,
+        name:payload->name,
+        fileName:payload->fileName,
+        fileType:payload->fileType,
+        uploadedAt:payload->uploadedAt,
+        reportSubmitted:payload->reportSubmitted,
+        archived:payload->archived,
+        feedback:payload->feedback,
+        resourceSeen:payload->resourceSeen,
+        seen:payload->seen,
+        trades:payload->trades,
+        checklists:payload->checklists,
+        config:payload->config,
+        stats:payload->stats
+      `)
+      .order('created_at',{ascending:false});
     console.timeEnd('LOAD_ALL_EXPORTS');
-    console.log('ROWS =', data?.length);
     if(error) throw error;
+
+    // Reconstruct the payload objects without the large fileData column to save bandwidth
+    const data = (archivedDataRaw||[]).map(r => ({
+      id: r.id,
+      student_name: r.student_name,
+      username: r.username,
+      created_at: r.created_at,
+      _isMetadataOnly: true,
+      payload: {
+        type: r.type,
+        name: r.name,
+        fileName: r.fileName,
+        fileType: r.fileType,
+        uploadedAt: r.uploadedAt,
+        reportSubmitted: r.reportSubmitted,
+        archived: r.archived,
+        feedback: r.feedback,
+        resourceSeen: r.resourceSeen,
+        seen: r.seen,
+        trades: r.trades,
+        checklists: r.checklists,
+        config: r.config,
+        stats: r.stats
+      }
+    }));
 
     console.time('cleanupInvalidExports()');
     const cleaned = await cleanupInvalidExports(data||[]);
@@ -1236,6 +1282,7 @@ function isValidExportRow(row){
     const ext=(name.split('.').pop()||'').toLowerCase();
     const allowed=['pdf','doc','docx','doc'];
     if(!allowed.includes(ext)) return false;
+    if(row._isMetadataOnly) return true;
     if(!payload.fileData && !payload.fileUrl) return false;
     return true;
   }
@@ -1636,11 +1683,29 @@ function buildReportHtml(payload){
   return `<!doctype html><html><head><meta charset="utf-8"><title>${name}</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:24px}h1,h2{margin:0 0 12px}p{margin:0 0 10px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f5f5f5}</style></head><body><h1>${name}</h1><p><strong>Generated:</strong> ${date}</p><p>${summary}</p></body></html>`;
 }
 
-function downloadReportPDF(id){
+async function downloadReportPDF(id){
   const list=window.__exports_list||[];
-  const row=list.find(item=>item.id===id);
+  let row=list.find(item=>item.id===id);
   if(!row){cAlert('Report not found','Error','❌','rgba(255,71,87,0.12)');return;}
-  const payload=row.payload||{};
+  let payload=row.payload||{};
+  if(payload.type==='report' && !payload.fileData && !payload.fileUrl){
+    try {
+      toast('Downloading file from database...');
+      const { data: fullRow, error } = await supabaseClient
+        .from('exports')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if(error) throw error;
+      if(fullRow && fullRow.payload) {
+        row.payload = fullRow.payload;
+        payload = fullRow.payload;
+      }
+    } catch(err) {
+      cAlert('Failed to download file: ' + (err.message||err), 'Download Error', '❌', 'rgba(255,71,87,0.12)');
+      return;
+    }
+  }
   if(payload.fileData && payload.fileName){
     const blob = dataURLToBlob(payload.fileData);
     downloadFile(payload.fileName, payload.fileType || 'application/octet-stream', blob);
